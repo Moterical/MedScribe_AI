@@ -2,6 +2,9 @@
 *.log
 aicrm.db
 aicrm.db-journal
+.env
+backend/.env
+
 
 # Python Virtual Environment
 .venv/
