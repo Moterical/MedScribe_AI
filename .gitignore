@@ -1,0 +1,30 @@
+# Logs & DB
+*.log
+aicrm.db
+aicrm.db-journal
+
+# Python Virtual Environment
+.venv/
+__pycache__/
+*.pyc
+
+# Node Modules (Frontend)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# IDE / Editor Files
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local reference design docs
+implementation_plan.md
+task.md
+walkthrough.md
+
