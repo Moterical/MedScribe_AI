@@ -70,9 +70,20 @@ const ChatPanel = () => {
     }
 
     if (isRecording) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {
+        console.error(err);
+      }
+      setIsRecording(false);
     } else {
-      recognitionRef.current.start();
+      setIsRecording(true);
+      try {
+        recognitionRef.current.start();
+      } catch (err) {
+        console.error(err);
+        setIsRecording(false);
+      }
     }
   };
 

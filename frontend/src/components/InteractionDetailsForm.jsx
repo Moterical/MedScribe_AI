@@ -16,11 +16,14 @@ const InteractionDetailsForm = () => {
   };
 
   const handleSuggestionClick = (suggestionText) => {
-    // If it's a schedule meeting command, open the calendar picker directly
+    // Check which tool action to trigger based on click
     if (suggestionText.toLowerCase().includes("schedule")) {
       dispatch(toggleCalendarPicker(true));
+    } else if (suggestionText.toLowerCase().includes("pdf") || suggestionText.toLowerCase().includes("briefing")) {
+      dispatch(sendChatMessage("Generate a Clinical Trial Briefing PDF for this discussion."));
+    } else if (suggestionText.toLowerCase().includes("email") || suggestionText.toLowerCase().includes("draft")) {
+      dispatch(sendChatMessage("Draft a follow-up email based on our discussion."));
     } else {
-      // Send the suggestion as a user chat message
       dispatch(sendChatMessage(suggestionText));
     }
   };
@@ -242,16 +245,16 @@ const InteractionDetailsForm = () => {
 
         {/* AI Suggested Follow-ups */}
         <div className="ai-suggestions-container">
-          <p className="suggestions-title">⚡ AI Suggested Follow-ups:</p>
+          <p className="suggestions-title">⚡ Quick Actions & Tools:</p>
           <ul className="suggestions-list">
             <li onClick={() => handleSuggestionClick("+ Schedule follow-up meeting in 2 weeks")}>
               + Schedule follow-up meeting in 2 weeks
             </li>
-            <li onClick={() => handleSuggestionClick("+ Send OncoBoost Phase III PDF")}>
-              + Send OncoBoost Phase III PDF
+            <li onClick={() => handleSuggestionClick("+ Generate Clinical Briefing PDF")}>
+              + Generate Clinical Briefing PDF
             </li>
-            <li onClick={() => handleSuggestionClick("+ Add Dr. Sharma to advisory board invite list")}>
-              + Add Dr. Sharma to advisory board invite list
+            <li onClick={() => handleSuggestionClick("+ Draft Follow-up Email")}>
+              + Draft Follow-up Email
             </li>
           </ul>
         </div>

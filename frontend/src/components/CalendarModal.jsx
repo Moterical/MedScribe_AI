@@ -3,12 +3,28 @@ import { useDispatch, useSelector } from 'react-redux';
 import { toggleCalendarPicker, updateFormField } from '../store/interactionSlice';
 import { Calendar, Clock, X } from 'lucide-react';
 
+const getTwoWeeksHenceDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 14);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getCurrentLocalTime = () => {
+  const date = new Date();
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+};
+
 const CalendarModal = () => {
   const dispatch = useDispatch();
   const calendarEvent = useSelector(state => state.interaction.calendar_event);
   
-  const [selectedDate, setSelectedDate] = useState(calendarEvent?.date || "");
-  const [selectedTime, setSelectedTime] = useState(calendarEvent?.time || "");
+  const [selectedDate, setSelectedDate] = useState(calendarEvent?.date || getTwoWeeksHenceDate());
+  const [selectedTime, setSelectedTime] = useState(calendarEvent?.time || getCurrentLocalTime());
   const [subject, setSubject] = useState(calendarEvent?.subject || "Follow-up Discussion");
 
   const handleSave = () => {

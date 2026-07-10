@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { updateAllFields } from './interactionSlice';
+import { updateAllFields, fetchActiveSession } from './interactionSlice';
 
 const systemIntro = {
   role: "assistant",
@@ -46,7 +46,8 @@ export const sendChatMessage = createAsyncThunk(
           email_draft: currentForm.email_draft,
           samples: currentForm.samples,
           materials: currentForm.materials
-        }
+        },
+        session_id: currentForm.session_id
       };
 
       const response = await fetch('http://localhost:8000/api/agent/chat', {
@@ -107,6 +108,11 @@ const chatSlice = createSlice({
           role: 'assistant',
           content: `⚠️ Error: Could not get a response from the agent. Detail: ${action.payload}`
         });
+      })
+      .addCase(fetchActiveSession.fulfilled, (state, action) => {
+        if (action.payload && action.payload.chat_history && action.payload.chat_history.length > 0) {
+          state.messages = [systemIntro, ...action.payload.chat_history];
+        }
       });
   }
 });

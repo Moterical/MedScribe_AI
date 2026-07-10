@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Time, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Date, Time, Text, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -15,7 +15,8 @@ class Interaction(Base):
     topics_discussed = Column(Text, nullable=True)
     sentiment = Column(String(20), default="Neutral")
     outcomes = Column(Text, nullable=True)
-    follow_up_actions = Column(Text, nullable=True)
+    follow_up_date = Column(Date, nullable=True)
+    follow_up_time = Column(Time, nullable=True)
     pdf_path = Column(String(500), nullable=True)
     email_draft = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -45,3 +46,13 @@ class Material(Base):
     file_url = Column(String(500), nullable=True)
 
     interaction = relationship("Interaction", back_populates="materials")
+
+
+class InteractionDraft(Base):
+    __tablename__ = "interaction_drafts"
+
+    session_id = Column(String(255), primary_key=True, index=True)
+    form_data = Column(JSON, nullable=False)
+    chat_history = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

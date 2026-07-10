@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Database, Save, CheckCircle2, RotateCcw } from 'lucide-react';
-import { submitInteraction, resetForm } from '../store/interactionSlice';
+import { submitInteraction, resetForm, fetchActiveSession, deleteActiveSession } from '../store/interactionSlice';
 import { clearChat } from '../store/chatSlice';
 import InteractionDetailsForm from './InteractionDetailsForm';
 import ChatPanel from './ChatPanel';
@@ -11,6 +11,13 @@ const LogInteractionScreen = () => {
   const dispatch = useDispatch();
   const form = useSelector(state => state.interaction);
   const { isSaving, saveSuccess, saveError } = form;
+
+  // Restore draft session from database on mount
+  useEffect(() => {
+    if (form.session_id) {
+      dispatch(fetchActiveSession(form.session_id));
+    }
+  }, [dispatch, form.session_id]);
 
   const handleSaveToCrm = () => {
     if (!form.hcp_name) {
@@ -22,6 +29,9 @@ const LogInteractionScreen = () => {
 
   const handleResetAll = () => {
     if (window.confirm("Are you sure you want to clear the current interaction draft and chat history?")) {
+      if (form.session_id) {
+        dispatch(deleteActiveSession(form.session_id));
+      }
       dispatch(resetForm());
       dispatch(clearChat());
     }

@@ -17,7 +17,17 @@ const getLocalTimeString = () => {
   return `${hours}:${minutes}`;
 };
 
+const getOrGenerateSessionId = () => {
+  let sessionId = localStorage.getItem('aicrm_session_id');
+  if (!sessionId) {
+    sessionId = 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    localStorage.setItem('aicrm_session_id', sessionId);
+  }
+  return sessionId;
+};
+
 const initialState = {
+  session_id: getOrGenerateSessionId(),
   hcp_name: "",
   interaction_type: "Meeting",
   interaction_date: getLocalDateString(),
@@ -40,6 +50,43 @@ const initialState = {
   saveError: null
 };
 
+// Async thunk to load active session draft from database on load
+export const fetchActiveSession = createAsyncThunk(
+  'interaction/fetchSession',
+  async (sessionId, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/agent/session/${sessionId}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null; // No active draft yet
+        }
+        throw new Error('Failed to fetch draft session');
+      }
+      return await response.json();
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
+// Async thunk to delete active session draft from database on reset
+export const deleteActiveSession = createAsyncThunk(
+  'interaction/deleteSession',
+  async (sessionId, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/agent/session/${sessionId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to delete draft session');
+      }
+      return await response.json();
+    } catch (error) {
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 // Async thunk to save the finalized interaction to the database
 export const submitInteraction = createAsyncThunk(
   'interaction/submit',
@@ -57,7 +104,8 @@ export const submitInteraction = createAsyncThunk(
         topics_discussed: state.topics_discussed,
         sentiment: state.sentiment,
         outcomes: state.outcomes,
-        follow_up_actions: state.follow_up_actions,
+        follow_up_date: state.calendar_event?.date || null,
+        follow_up_time: state.calendar_event?.time || null,
         email_draft: state.email_draft,
         pdf_path: state.pdf_path,
         samples: state.samples.map(s => ({
@@ -67,7 +115,8 @@ export const submitInteraction = createAsyncThunk(
         materials: state.materials.map(m => ({
           material_name: typeof m === 'string' ? m : m.material_name,
           file_url: typeof m === 'string' ? null : m.file_url
-        }))
+        })),
+        session_id: state.session_id
       };
 
       const response = await fetch('http://localhost:8000/api/interactions/log', {
@@ -112,8 +161,11 @@ const interactionSlice = createSlice({
       });
     },
     resetForm: (state) => {
+      const newSessionId = 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+      localStorage.setItem('aicrm_session_id', newSessionId);
       return {
         ...initialState,
+        session_id: newSessionId,
         interaction_date: getLocalDateString(),
         interaction_time: getLocalTimeString()
       };
@@ -135,11 +187,25 @@ const interactionSlice = createSlice({
       .addCase(submitInteraction.fulfilled, (state) => {
         state.isSaving = false;
         state.saveSuccess = true;
+        // Generate a new session ID for the next flow
+        const newSessionId = 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+        localStorage.setItem('aicrm_session_id', newSessionId);
+        state.session_id = newSessionId;
       })
       .addCase(submitInteraction.rejected, (state, action) => {
         state.isSaving = false;
         state.saveSuccess = false;
         state.saveError = action.payload || 'Failed to save.';
+      })
+      .addCase(fetchActiveSession.fulfilled, (state, action) => {
+        if (action.payload && action.payload.form_data) {
+          const fields = action.payload.form_data;
+          Object.keys(fields).forEach(key => {
+            if (state[key] !== undefined) {
+              state[key] = fields[key];
+            }
+          });
+        }
       });
   }
 });

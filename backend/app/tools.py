@@ -20,7 +20,7 @@ class LogInteractionInput(BaseModel):
     sentiment: Optional[str] = Field(default=None, description="Observed sentiment of the HCP: 'Positive', 'Neutral', 'Negative'.")
     outcomes: Optional[str] = Field(default=None, description="Outcomes or agreements of the meeting.")
     follow_up_actions: Optional[str] = Field(default=None, description="Any immediate follow-up tasks.")
-    samples: Optional[Any] = Field(default=None, description="List of drug/product samples distributed, with quantity. Can be a list, dict, or JSON string.")
+    samples: Optional[Any] = Field(default=None, description="Details of drug/product samples distributed, with quantity. Can be a list of objects with 'sample_name' and 'quantity', a JSON string, or a plain text description. Only include samples that were actually handed out/distributed. If the product name is not explicitly mentioned, infer it based on the topics discussed.")
     materials: Optional[Any] = Field(default=None, description="List of materials/brochures shared. Can be a list, comma-separated string, or JSON string.")
 
 # 2. edit_interaction Schema
@@ -113,53 +113,59 @@ def normalize_date(date_str: str) -> str:
         next_week = today + timedelta(days=7)
         return next_week.strftime("%Y-%m-%d")
         
-    # Clean common prefixes or ordinal suffixes: "20th", "1st", "2nd", "3rd"
-    d_clean = d.replace("th", "").replace("st", "").replace("nd", "").replace("rd", "").replace(",", "")
+    # Clean ordinal suffixes only when they follow a number (e.g. "14th", "1st", "22nd") so we don't corrupt month names like "August"
+    import re
+    d_clean = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1', d, flags=re.IGNORECASE)
+    d_clean = d_clean.replace(",", "").strip()
     
     # Try parsing patterns
     for fmt in ("%y-%m-%d", "%y/%m/%d", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d", "%Y-%m-%dt%h:%m:%s"):
-        try:
-            parsed = datetime.strptime(d_clean.strip(), fmt)
-            return parsed.strftime("%Y-%m-%d")
-        except ValueError:
-            continue
+      try:
+        parsed = datetime.strptime(d_clean, fmt)
+        return parsed.strftime("%Y-%m-%d")
+      except ValueError:
+        continue
             
     # Try parsing text-based formats e.g. "august 20 2026"
     for fmt in ("%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y"):
-        try:
-            parsed = datetime.strptime(d_clean.strip(), fmt)
-            return parsed.strftime("%Y-%m-%d")
-        except ValueError:
-            continue
+      try:
+        parsed = datetime.strptime(d_clean.title(), fmt)
+        return parsed.strftime("%Y-%m-%d")
+      except ValueError:
+        continue
             
     # If parsing failed, append current year and try again
     current_year = str(today.year)
     d_with_year = f"{d_clean} {current_year}"
     for fmt in ("%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y"):
-        try:
-            parsed = datetime.strptime(d_with_year.strip(), fmt)
-            return parsed.strftime("%Y-%m-%d")
-        except ValueError:
-            continue
+      try:
+        parsed = datetime.strptime(d_with_year.title(), fmt)
+        return parsed.strftime("%Y-%m-%d")
+      except ValueError:
+        continue
             
     # Try parsing numerical formats like "08-20" or "08/20" by appending year
     for sep in ("-", "/"):
-        parts = d_clean.split(sep)
-        if len(parts) == 2:
-            try:
-                test_str = f"{parts[0]}{sep}{parts[1]}{sep}{current_year}"
-                parsed = datetime.strptime(test_str, f"%m{sep}%d{sep}%Y")
-                return parsed.strftime("%Y-%m-%d")
-            except ValueError:
-                try:
-                    test_str = f"{parts[0]}{sep}{parts[1]}{sep}{current_year}"
-                    parsed = datetime.strptime(test_str, f"%d{sep}%m{sep}%Y")
-                    return parsed.strftime("%Y-%m-%d")
-                except ValueError:
-                    continue
+      parts = d_clean.split(sep)
+      if len(parts) == 2:
+        try:
+          test_str = f"{parts[0]}{sep}{parts[1]}{sep}{current_year}"
+          parsed = datetime.strptime(test_str, f"%m{sep}%d{sep}%Y")
+          return parsed.strftime("%Y-%m-%d")
+        except ValueError:
+          try:
+            test_str = f"{parts[0]}{sep}{parts[1]}{sep}{current_year}"
+            parsed = datetime.strptime(test_str, f"%d{sep}%m{sep}%Y")
+            return parsed.strftime("%Y-%m-%d")
+          except ValueError:
+            continue
 
-    # Fallback to returning raw or today
-    return date_str
+    # Fallback: if it's already a valid YYYY-MM-DD string, return it, otherwise return None to prevent schema crashes
+    try:
+      datetime.strptime(date_str.strip(), "%Y-%m-%d")
+      return date_str.strip()
+    except ValueError:
+      return None
 
 
 def execute_tool_action(name: str, args: Dict[str, Any], current_form: Dict[str, Any]) -> tuple[Dict[str, Any], str]:
@@ -181,10 +187,14 @@ def execute_tool_action(name: str, args: Dict[str, Any], current_form: Dict[str,
             updated_form["hcp_name"] = args["hcp_name"]
         if args.get("interaction_type") is not None:
             updated_form["interaction_type"] = args["interaction_type"]
-        if args.get("date") is not None:
-            updated_form["interaction_date"] = normalize_date(args["date"])
-        if args.get("time") is not None:
-            updated_form["interaction_time"] = normalize_time(args["time"])
+        if args.get("date"):
+            norm_d = normalize_date(args["date"])
+            if norm_d:
+                updated_form["interaction_date"] = norm_d
+        if args.get("time"):
+            norm_t = normalize_time(args["time"])
+            if norm_t:
+                updated_form["interaction_time"] = norm_t
         if args.get("attendees") is not None:
             updated_form["attendees"] = args["attendees"]
         if args.get("topics_discussed") is not None:
@@ -200,42 +210,130 @@ def execute_tool_action(name: str, args: Dict[str, Any], current_form: Dict[str,
         if args.get("samples") is not None:
             samples_raw = args.get("samples")
             samples_list = []
+            
+            # Pre-parse string containing dictionary representation
             if isinstance(samples_raw, str):
                 cleaned = samples_raw.strip()
+                if cleaned.startswith("{") and cleaned.endswith("}"):
+                    try:
+                        import ast
+                        dict_val = ast.literal_eval(cleaned)
+                        if isinstance(dict_val, dict):
+                            samples_raw = dict_val
+                    except Exception:
+                        pass
+
+            # If it is a dictionary, wrap in a list or parse key-value map
+            if isinstance(samples_raw, dict):
+                # Check if it has a key that contains the list of samples
+                has_list_key = False
+                for key in ["samples", "data", "list", "items", "distributed_samples", "distributed"]:
+                    if key in samples_raw and isinstance(samples_raw[key], list):
+                        samples_list = samples_raw[key]
+                        has_list_key = True
+                        break
+                
+                if not has_list_key:
+                    # Check if it is a key-value map of {product_name: quantity}
+                    # e.g., {"Hypertension Tablets": 5}
+                    samples_list = []
+                    for k, v in samples_raw.items():
+                        try:
+                            # If value is an integer or can be converted to one
+                            val_int = int(v)
+                            # Make sure the key isn't a schema keyword
+                            if k.lower() not in ["total", "remaining", "in_bag", "inventory", "total_samples", "in_bag_samples"]:
+                                samples_list.append({"sample_name": str(k), "quantity": val_int})
+                        except (ValueError, TypeError):
+                            continue
+            # If it is a list, use it
+            elif isinstance(samples_raw, list):
+                samples_list = samples_raw
+            # If it is a string
+            elif isinstance(samples_raw, str):
+                cleaned = samples_raw.strip()
+                # Check if it's a JSON list
                 if cleaned.startswith("[") and cleaned.endswith("]"):
                     try:
                         samples_list = json.loads(cleaned)
                     except Exception:
                         pass
                 elif cleaned:
-                    samples_list = [{"sample_name": cleaned, "quantity": 1}]
-            elif isinstance(samples_raw, list):
-                samples_list = samples_raw
+                    # Try to parse strings like "2 samples", "2 units of OncoBoost", "5 vials"
+                    import re
+                    match = re.search(r'(\d+)\s*(?:samples?|units?|items?|vials?|packages?|tablets?)?\s*(?:of\s+)?(.*)', cleaned, re.IGNORECASE)
+                    if match:
+                        qty = int(match.group(1))
+                        name = match.group(2).strip()
+                        if not name:
+                            name = f"{args.get('topics_discussed') or 'Product'} Sample"
+                        samples_list = [{"sample_name": name, "quantity": qty}]
+                    else:
+                        if cleaned.isdigit():
+                            name = f"{args.get('topics_discussed') or 'Product'} Sample"
+                            samples_list = [{"sample_name": name, "quantity": int(cleaned)}]
+                        else:
+                            samples_list = [{"sample_name": cleaned, "quantity": 1}]
+            # If it is a number (int or float)
+            elif isinstance(samples_raw, (int, float)):
+                name = f"{args.get('topics_discussed') or 'Product'} Sample"
+                samples_list = [{"sample_name": name, "quantity": int(samples_raw)}]
                 
             final_samples = []
             for s in samples_list:
+                name = None
+                qty = 1
                 if isinstance(s, dict):
-                    final_samples.append({
-                        "sample_name": s.get("sample_name", s.get("name", "Product Sample")),
-                        "quantity": int(s.get("quantity", s.get("qty", 1)))
-                    })
+                    name = s.get("sample_name") or s.get("name")
+                    qty = s.get("quantity") or s.get("qty")
                 elif isinstance(s, str):
-                    final_samples.append({
-                        "sample_name": s,
-                        "quantity": 1
-                    })
+                    name = s
+                    qty = 1
                 elif hasattr(s, "dict"):
                     s_dict = s.dict()
-                    final_samples.append({
-                        "sample_name": s_dict.get("sample_name", "Product Sample"),
-                        "quantity": int(s_dict.get("quantity", 1))
-                    })
+                    name = s_dict.get("sample_name")
+                    qty = s_dict.get("quantity")
+
+                # Parse and clean name
+                if name:
+                    import re
+                    # Strip out action details like "given to the doctor out of 5 in the bag", "remaining", etc.
+                    name = re.sub(r'\s*(?:given|handed|distributed|delivered|shared|sent)\s*(?:to\s*(?:the\s*)?(?:doctor|hcp))?.*', '', name, flags=re.IGNORECASE)
+                    name = re.sub(r'\s*out\s+of\s+\d+.*', '', name, flags=re.IGNORECASE)
+                    name = re.sub(r'\s*in\s+the\s+bag.*', '', name, flags=re.IGNORECASE)
+                    name = name.strip()
+
+                if not name:
+                    name = f"{args.get('topics_discussed') or 'Product'} Sample"
+
+                try:
+                    qty = int(qty) if qty is not None else 1
+                except ValueError:
+                    qty = 1
+
+                final_samples.append({
+                    "sample_name": name,
+                    "quantity": qty
+                })
             updated_form["samples"] = final_samples
         
         # Parse materials defensively
         if args.get("materials") is not None:
             mats_raw = args.get("materials")
             mats = []
+            
+            # Pre-parse string containing dictionary representation
+            if isinstance(mats_raw, str):
+                cleaned = mats_raw.strip()
+                if cleaned.startswith("{") and cleaned.endswith("}"):
+                    try:
+                        import ast
+                        dict_val = ast.literal_eval(cleaned)
+                        if isinstance(dict_val, dict):
+                            mats_raw = dict_val
+                    except Exception:
+                        pass
+
             if isinstance(mats_raw, str):
                 cleaned = mats_raw.strip()
                 if cleaned.startswith("[") and cleaned.endswith("]"):
@@ -247,6 +345,17 @@ def execute_tool_action(name: str, args: Dict[str, Any], current_form: Dict[str,
                     mats = [x.strip() for x in mats_raw.split(",") if x.strip()]
             elif isinstance(mats_raw, list):
                 mats = mats_raw
+            elif isinstance(mats_raw, dict):
+                mats = []
+                for k, v in mats_raw.items():
+                    try:
+                        val_int = int(v)
+                        if val_int > 1:
+                            mats.append(f"{k} (x{val_int})")
+                        else:
+                            mats.append(str(k))
+                    except (ValueError, TypeError):
+                        mats.append(str(k))
             else:
                 mats = []
 
