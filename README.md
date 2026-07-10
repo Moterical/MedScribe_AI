@@ -30,6 +30,7 @@ The purpose of this project is to:
 ### Backend
 - **Framework**: FastAPI (Python).
 - **Database**: PostgreSQL (using SQLAlchemy async engine with `asyncpg`).
+- **Draft Session Persistence**: Auto-saves active chat logs and temporary forms in a dedicated `interaction_drafts` database table, restoring them instantly on page reloads to prevent work loss.
 - **Dynamic Database Fallback**: Automatically redirects configuration to a local SQLite database (`aicrm.db`) using `aiosqlite` if PostgreSQL is not active, enabling zero-configuration test runs.
 - **Dynamic Document Compilation**: Python's `reportlab` library dynamically compiles custom PDF Clinical Trial Briefings.
 
@@ -50,7 +51,7 @@ The LangGraph agent acts as the brain of the CRM module, parsing the representat
 2.  **`edit_interaction`**: Allows the representative to make specific state adjustments verbally (e.g. *"Change the meeting time to 3 PM"* or *"Actually the doctor was Dr. Watson, not Dr. Smith"*), targeting specific fields without wiping previous entries.
 3.  **`generate_study_pdf`**: Triggered when scientific research papers or clinical details are mentioned. It creates a personalized Clinical Brief PDF detailing the efficacy, safety, and sample records related to the discussion, attaching a download link to the frontend UI.
 4.  **`generate_followup_email`**: Automatically drafts a follow-up email tailored to the outcomes of the conversation and simulates sending it when a recipient address is specified.
-5.  **`schedule_calendar_event`**: Processes requested follow-up dates/times and triggers the frontend UI to launch the interactive calendar picker modal.
+5.  **`schedule_calendar_event`**: Processes requested follow-up dates/times and triggers the frontend UI to launch the interactive calendar picker modal, which automatically pre-populates with a default date exactly 2 weeks from today and the current local time if unscheduled.
 
 ---
 
